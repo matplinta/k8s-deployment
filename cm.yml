@@ -12,6 +12,7 @@ data:
           metadata:
             name: job${jobName}
           spec:
+            ttlSecondsAfterFinished: 60
             template:
               spec:
                 restartPolicy: Never
