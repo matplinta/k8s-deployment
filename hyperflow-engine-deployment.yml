@@ -18,14 +18,14 @@ spec:
       - name: hyperflow
         image: matplinta/hyperflow:1.0
         imagePullPolicy: Always
-        lifecycle:
-          preStop:
-            exec:
-              command: 
-                - "/bin/sh"
-                - "-c"
-                - >
-                  echo 1 > /work_dir/postprocStart
+        # lifecycle:
+        #   preStop:
+        #     exec:
+        #       command: 
+        #         - "/bin/sh"
+        #         - "-c"
+        #         - >
+        #           echo 1 > /work_dir/postprocStart
         env:
         - name: REDIS_URL
           # Change that value to reflect your and namespace and cluster FQDN
@@ -61,8 +61,13 @@ spec:
               cd /work_dir/ ;
               echo "Running workflow:" ;
               hflow run workflow.json ;
-              hflow-info /work_dir/workflow.json --print -f /work_dir | tee /work_dir/file_sizes.log
-              echo "Workflow finished." ;
+              hflow-info /work_dir/workflow.json --print -f /work_dir > /work_dir/file_sizes.log 2>&1 ;
+              cat /work_dir/file_sizes.log ;
+              echo 1 > /work_dir/postprocStart ;
+              echo "Workflow finished. Container is waiting for manual termination." ;
+              while true; do sleep 5 ; done ;
+            else
+              while true; do sleep 5 ; done ;
             fi ;
         volumeMounts:
            - name: workflow-data

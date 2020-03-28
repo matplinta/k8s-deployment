@@ -1,29 +1,21 @@
 # HyperFlow deployment on Kubernetes
-## Architecture
-
-<img src="https://github.com/hyperflow-wms/hyperflow-k8s-deployment/blob/master/hyperflow-k8s-arch.png" width="600">
 
 ## Running the workflow
 If you already have access to a Kubernetes cluster via `kubectl`, you can run workflows as follows. 
 
-### Granting HyperFlow permission to create jobs
-To allow the HyperFlow process to create new Pods, you need to grant admin access to its service account. For now the workaround is to grant super-user access to all service accounts cluster-wide: 
-```
-kubectl create clusterrolebinding serviceaccounts-cluster-admin \
---clusterrole=cluster-admin \
---group=system:serviceaccounts
-```
-
 ### Creating Kubernetes resources
 Create Kubernetes resources as follows:
 ```
+kubectl apply -f crb.yml
 kubectl apply -f cm.yml
 kubectl apply -f nfs-server-service.yml
 kubectl apply -f redis-service.yml
 kubectl apply -f redis.yml
 kubectl apply -f nfs-server.yml
+sed -i -E "s/server:.*/server: `kubectl get services | grep nfs-server | awk '{ print $3 }'`/" pv-pvc.yml
 kubectl apply -f pv-pvc.yml
 kubectl apply -f hyperflow-engine-deployment.yml
+kubectl apply -f parser-job.yml
 ```
 
 The default configuration runs a small Montage workflow. To change this, configure workflow *worker container* in `hyperflow-engine-deployment.yml` and *data container* in `nfs-server.yml`.

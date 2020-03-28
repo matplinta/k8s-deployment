@@ -8,7 +8,7 @@ spec:
   accessModes:
     - ReadWriteMany
   nfs:
-    server: nfs-server.default.svc.cluster.local
+    server: 10.102.2.226
     path: "/"
 ---
 kind: PersistentVolumeClaim
