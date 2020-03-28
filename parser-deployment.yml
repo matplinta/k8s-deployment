@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logs-parser
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: logs-parser
+      component: logs-parser
+  template:
+    metadata:
+      labels:
+        name: logs-parser
+        component: logs-parser
+    spec:
+      containers:
+      - name: parser
+        image: matplinta/logs-parser:1.0
+        imagePullPolicy: Always
+        lifecycle:
+          preStop:
+            exec:
+              command: 
+                - "/bin/sh"
+                - "-c"
+                - >
+                  echo 1 > /work_dir/postprocStart
+        command:
+          - "/bin/sh"
+          - "-c"
+          - >
+            while ! [ -f /work_dir/postprocStart ]; do echo "Waiting for postprocStart flag to be mounted..." ; done ;
+            echo "postprocStart flag mounted: " ; ls -la /work_dir ;
+            python3 parser.py -s /work_dir/logs-hf -d /work_dir
+        volumeMounts:
+           - name: workflow-data
+             mountPath: "/work_dir:shared"
+      volumes:
+      - name: workflow-data
+        persistentVolumeClaim:
+          claimName: nfs
+
