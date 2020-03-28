@@ -16,8 +16,16 @@ spec:
     spec:
       containers:
       - name: hyperflow
-        image: hyperflowwms/hyperflow:v1.3.23
+        image: matplinta/hyperflow:node12
         imagePullPolicy: Always
+        lifecycle:
+          preStop:
+            exec:
+              command: 
+                - "/bin/sh"
+                - "-c"
+                - >
+                  echo 1 > /work_dir/postprocStart
         env:
         - name: REDIS_URL
           # Change that value to reflect your and namespace and cluster FQDN
@@ -29,8 +37,8 @@ spec:
         - name: HF_VAR_JOB_TEMPLATE_PATH
           value: "/opt/hyperflow/job-template.yaml"
         - name: HF_VAR_WORKER_CONTAINER
-          value: "hyperflowwms/soykb-workflow-worker:v1.0.10-1-g95b7caf"
-          #value: "hyperflowwms/montage-workflow-worker:v1.0.9-1-gd61c86c"
+          # value: "hyperflowwms/soykb-workflow-worker:v1.0.10-1-g95b7caf"
+          value: "hyperflowwms/montage-workflow-worker:v1.0.9-1-gd61c86c"
         - name: HF_VAR_WORK_DIR
           value: "/work_dir"
         - name: HF_VAR_DEBUG
@@ -53,10 +61,8 @@ spec:
               cd /work_dir/ ;
               echo "Running workflow:" ;
               hflow run workflow.json ;
-              echo "Workflow finished. Container is waiting for manual termination." ;
-              while true; do sleep 5 ; done ;
-            else
-              while true; do sleep 5 ; done ;
+              hflow-info /work_dir/workflow.json --print -f /work_dir | tee /work_dir/file_sizes.log
+              echo "Workflow finished." ;
             fi ;
         volumeMounts:
            - name: workflow-data
