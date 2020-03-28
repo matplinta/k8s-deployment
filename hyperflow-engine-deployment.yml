@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: hyperflow
-        image: matplinta/hyperflow:node12
+        image: matplinta/hyperflow:1.0
         imagePullPolicy: Always
         lifecycle:
           preStop:
