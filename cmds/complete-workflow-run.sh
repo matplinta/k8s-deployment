@@ -12,9 +12,7 @@ CLUSTER_CREATE=0
 CLUSTER_KILL=0
 
 function log () {
-    if [[ $_V -eq 1 ]]; then
-        echo -e "$COLOR$@"
-    fi
+    [[ $_V -eq 1 ]] && echo -e "$COLOR$@"
 }
 
 # set correct working directory
