@@ -8,7 +8,7 @@ spec:
   accessModes:
     - ReadWriteMany
   nfs:
-    server: 10.102.2.226
+    server: 10.0.14.240
     path: "/"
 ---
 kind: PersistentVolumeClaim
