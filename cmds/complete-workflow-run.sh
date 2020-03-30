@@ -5,29 +5,43 @@ OPTIND=1        # Reset in case getopts has been used previously in the shell.
 
 # init variables
 _V=1
-COLOR="\e[34m"
+COLOR="\e[36m"
 
 CLUSTER_NAME=cluster-x
 CLUSTER_CREATE=0
 CLUSTER_KILL=0
+KUBERNETES_WAIT=0
 
 function log () {
-    [[ $_V -eq 1 ]] && echo -e "$COLOR$@"
+    [[ $_V -eq 1 ]] && echo -e "$COLOR$@\e[0m"
 }
 
-# set correct working directory
-cd "$(dirname "$0")" && cd ..
-log ":: Working directory set to `pwd`"
-exit 0
+function usage() { 
+    echo -e "Usage: ./complete-workflow-run.sh [OPTS]:\n\t-n [<cluster_name>]\tto set cluster name\n\t-c\tto create new cluster\n\t-k\tkill cluster in the end\t-h\tdisplay this message"; exit 0 
+}
 
-while getopts "h?nckv:" opt; do
+function kill_k8s() {
+    # cluster kubernetes cleanup
+    log ":: Begin cluster kubernetes cleanup"
+    kubectl delete jobs `kubectl get jobs -o custom-columns=:.metadata.name`
+    kubectl delete deployment,pod,svc --all -n default --timeout 10s
+    kubectl delete pv,pvc --all --timeout 10s || kubectl patch pvc nfs -p '{"metadata":{"finalizers":null}}'; kubectl patch pv  nfs -p '{"metadata":{"finalizers":null}}'
+    # force delete after 30s timeout of hyperflow-engine pod
+    kubectl delete deployment,pod,svc,pv,pvc --all -n default --timeout 30s || kubectl delete pod --all -n default --force --grace-period=0
+
+    # check if all config is gone
+    [ `kubectl get pv,pvc,pod,deployment,svc -n default | wc -l` -eq 2 ] && log ":: Kubernetes config on cluster has been cleaned up"
+}
+
+
+
+while getopts "h?ckvwon:" opt; do
     case "$opt" in
     h|\?)
-        echo -e "Usage: ./complete-workflow-run.sh [OPTS]:\n\t-n [<cluster_name>]\tto set cluster name\n\t-c\tto create new cluster\n\t-k\tkill cluster in the end\t-h\tdisplay this message"
-        exit 0
+        usage
         ;;
     n)  CLUSTER_NAME=$OPTARG
-        [ -z "$CLUSTER_NAME" ] && echo "Empty cluster name variable\nExiting..."; exit 1
+        [ -z "$CLUSTER_NAME" ] && echo -e "Empty cluster name variable\nExiting..."; exit 1
         ;;
     c)  CLUSTER_CREATE=1
         ;;
@@ -35,11 +49,20 @@ while getopts "h?nckv:" opt; do
         ;;
     v)  _V=1
         ;;
+    w)  KUBERNETES_WAIT=1
+        ;;
+    o)  kill_k8s
+        exit 0
+        ;;
     esac
 done
 
 shift $((OPTIND-1))
 [ "${1:-}" = "--" ] && shift
+
+# set correct working directory
+cd "$(dirname "$0")" && cd ..
+log ":: Working directory set to `pwd`"
 
 if [ $CLUSTER_CREATE -eq 1 ]; then
     log ":: Creating cluster $CLUSTER_NAME"
@@ -69,18 +92,7 @@ for file in job_descriptions.jsonl metrics.jsonl sys_info.jsonl nodes.log; do
     kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/$file tmp/$file
 done
 
-# cluster kubernetes cleanup
-log ":: Begin cluster kubernetes cleanup"
-kubectl delete jobs `kubectl get jobs -o custom-columns=:.metadata.name`
-kubectl delete deployment,pod,svc --all -n default --timeout 10s
-# kubectl patch pvc nfs -p '{"metadata":{"finalizers":null}}'
-# kubectl patch pv  nfs -p '{"metadata":{"finalizers":null}}'
-kubectl delete pv,pvc --all --timeout 10s || kubectl patch pvc nfs -p '{"metadata":{"finalizers":null}}'; kubectl patch pv  nfs -p '{"metadata":{"finalizers":null}}'
-# force delete after 30s timeout of hyperflow-engine pod
-kubectl delete deployment,pod,svc --all -n default --timeout 30s || kubectl delete pod --all -n default --force --grace-period=0
-
-# check if all config is gone
-[ `kubectl get pv,pvc,pod,deployment,svc -n default | wc -l` -eq 2 ] && log ":: Kubernetes config on cluster has been cleaned up"
-
+[ $KUBERNETES_WAIT -eq 0 ] && kill_k8s
 # kill cluster
 [ $CLUSTER_KILL -eq 1 ] && gcloud container clusters delete $CLUSTER_NAME --quiet
+
