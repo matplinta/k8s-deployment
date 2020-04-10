@@ -14,8 +14,11 @@ spec:
       - name: parser
         image: matplinta/logs-parser:latest
         imagePullPolicy: Always
+        resources:
+          requests:
+            cpu: 0 
         command:
-          - "/bin/sh"
+          - "/bin/sh" 
           - "-c"
           - >
             while ! [ -f /work_dir/postprocStart ]; do echo "Waiting for postprocStart flag to be mounted..." ; sleep 5 ; done ;

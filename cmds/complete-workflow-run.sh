@@ -17,7 +17,7 @@ function log () {
 }
 
 function usage() { 
-    echo -e "Usage: ./complete-workflow-run.sh [OPTS]:\n\t-n [<cluster_name>]\tto set cluster name\n\t-c\tto create new cluster\n\t-k\tkill cluster in the end\t-h\tdisplay this message"; exit 0 
+    echo -e "Usage: ./complete-workflow-run.sh [OPTS]:\n\t-n [<cluster_name>]\tto set cluster name\n\t-c\tto create new cluster\n\t-k\tkill cluster in the end\n\t-w\twait for k8s; after completing workflow, leave k8s config\n\t-o\tONLY: reset kubernetes configuration on cluster only \n\t-h\tdisplay this message"; exit 0 
 }
 
 function kill_k8s() {
@@ -32,8 +32,6 @@ function kill_k8s() {
     # check if all config is gone
     [ `kubectl get pv,pvc,pod,deployment,svc -n default | wc -l` -eq 2 ] && log ":: Kubernetes config on cluster has been cleaned up"
 }
-
-
 
 while getopts "h?ckvwon:" opt; do
     case "$opt" in
@@ -84,7 +82,7 @@ kubectl exec $(kubectl get pods --selector=role=nfs-server --template '{{range .
 # kubectl get pods -o go-template='{{- define "checkStatus" -}}name={{- .metadata.name -}};nodeName={{- .spec.nodeName -}};{{- range .status.conditions -}}{{- .type -}}={{- .lastTransitionTime }};{{- end -}}{{- printf "\n" -}}{{- end -}}{{- if .items -}}{{- range .items -}}{{ template "checkStatus" . }}{{- end -}}{{- else -}}{{ template "checkStatus" . }}{{- end -}}'
 
 log ":: Copy nodes.log to nfs server"
-mkdir -p tmp && kubectl get pod -o=custom-columns=NODE:.spec.nodeName,NAME:.metadata.name -n default | grep job > tmp/nodes.log
+mkdir -p tmp && kubectl get pod -o=custom-columns=NODE:.spec.nodeName,NAME:.metadata.name -n default | grep -P 'job|NAME' > tmp/nodes.log
 kubectl cp tmp/nodes.log -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):/exports
 
 log ":: Copying jsonl parsed logs"
