@@ -43,7 +43,7 @@ spec:
         - 'mount -o bind /data /workflow-data ; sleep 3600000 ;
 
           '
-        image: hyperflowwms/montage-workflow-data:montage0.25-bf0b1b4450c201ee5f549c7f473d2ef0
+        image: hyperflowwms/soykb-workflow-data:hyperflow-soykb-example-f6f69d6ca3ebd9fe2458804b59b4ef71
         imagePullPolicy: Always
         lifecycle:
           preStop:

@@ -13,7 +13,8 @@ CLUSTER_KILL=0
 KUBERNETES_WAIT=0
 WORKFLOW_NAME=montage0.25
 PROJECT_ID=automatize-added-account-token
-PROVIDER=gcloud     #aws or gcloud
+PROVIDER=gcloud                             # aws or gcloud
+NODES=3                                     # no of nodes
 
 ALIASES=(
     montage0.25
@@ -29,7 +30,8 @@ declare -A WORKFLOWS=(
     ["matplinta/montage-workflow-data:montage2.0-v1"]="hyperflowwms/montage-workflow-worker:v1.0.10"
     # ["matplinta/montage2-workflow-data:montage0.25-v1"]="hyperflowwms/montage2-worker:latest"
     ["matplinta/montage2-workflow-data:montage0.001-v3"]="matplinta/montage2-worker:v1"
-    ["hyperflowwms/soykb-workflow-data:hyperflow-soykb-example-f6f69d6ca3ebd9fe2458804b59b4ef71"]="hyperflowwms/soykb-workflow-worker:v1.0.10-1-g95b7caf"
+    # ["hyperflowwms/soykb-workflow-data:hyperflow-soykb-example-f6f69d6ca3ebd9fe2458804b59b4ef71"]="hyperflowwms/soykb-workflow-worker:v1.0.10-1-g95b7caf"
+    ["hyperflowwms/soykb-workflow-data:hyperflow-soykb-example-f6f69d6ca3ebd9fe2458804b59b4ef71"]="hyperflowwms/soykb-workflow-worker:v1.0.11"
 )
 
 function show_workflows() {
@@ -47,6 +49,7 @@ echo -e "Usage: complete-workflow-run.sh [OPTION]...
   -r\t<workflow>\t\trun specified workflow (you can check it with -l parameter)
   -n\t<cluster_name>\t\tto set cluster name
   -p\t<provider>\t\tspecify provider used. Defaults to gcloud
+  -N\t<node_no>\t\tspecify nodes quantity
   -c\tto create new cluster
   -l\tlist all available workflows
   -k\tkill cluster in the end
@@ -112,13 +115,33 @@ fi
 cd "$(dirname "$0")" && cd ..
 
 
-while getopts "h?ckvwodln:r:p:" opt; do
+while getopts "h?ckvwodln:N:r:p:" opt; do
     case "$opt" in
+    c)  CLUSTER_CREATE=1
+        ;;
+    d)  delete_cluster
+        exit 0
+        ;;
     h|\?)
         usage
         ;;
+    k)  CLUSTER_KILL=1
+        ;;
+    l)  for i in "${ALIASES[@]}"; do 
+            echo $i
+        done
+        exit 0
+        ;;
     n)  CLUSTER_NAME=$OPTARG
         [ -z "$CLUSTER_NAME" ] && log ":: Empty cluster name variable\nExiting..." && exit 1
+        ;;
+    N)  if ! [[ $OPTARG =~ ^[0-9]+$ ]] ; then
+            log ":: Error: Nodes value is not a number"; exit 1
+        fi
+        NODES=$OPTARG
+        ;;
+    o)  kill_k8s
+        exit 0
         ;;
     p)  PROVIDER=$OPTARG
         [ -z "$PROVIDER" ] && log ":: Empty provider name, exiting..." && exit 1
@@ -129,24 +152,9 @@ while getopts "h?ckvwodln:r:p:" opt; do
     r)  WORKFLOW_NAME=$OPTARG
         change_workflow
         ;;
-    c)  CLUSTER_CREATE=1
-        ;;
-    k)  CLUSTER_KILL=1
-        ;;
-    v)  _V=1
-        ;;
     w)  KUBERNETES_WAIT=1
         ;;
-    o)  kill_k8s
-        exit 0
-        ;;
-    l)  for i in "${ALIASES[@]}"; do 
-            echo $i
-        done
-        exit 0
-        ;;
-    d)  delete_cluster
-        exit 0
+    v)  _V=1
         ;;
     esac
 done
@@ -164,9 +172,9 @@ if [ $CLUSTER_CREATE -eq 1 ]; then
     log ":: Creating cluster $CLUSTER_NAME"
     if [ "$PROVIDER" = "gcloud" ]; then
         # gcloud config set project automatize-added-account-token
-        cmds/create-cluster.sh $CLUSTER_NAME
+        cmds/create-cluster.sh $CLUSTER_NAME $NODES
     elif [ "$PROVIDER" = "aws" ]; then
-        eksctl create cluster --name cluster-aws --region eu-west-1 --nodegroup-name node-pool --node-type t3.small --nodes 3 --nodes-min 3 --nodes-max 3 --node-volume-size 20 --ssh-access
+        eksctl create cluster --name cluster-aws --region eu-west-1 --nodegroup-name node-pool --node-type t3.micro --nodes $NODES --nodes-min $NODES --nodes-max $NODES --node-volume-size 20 --ssh-access
     fi
 fi
 
@@ -186,7 +194,7 @@ log ":: Applying k8s deployments"
 if [[ "$WORKFLOW_NAME" =~ "soykb" ]]
 then
     log ":: SoyKB workflow; changing minimal container memory request of hyperflow"
-    python3 cmds/changeMem.py hyperflow-engine-deployment.yml 1050Mi
+    python3 cmds/changeMem.py hyperflow-engine-deployment.yml 800Mi
     apply_k8s
     python3 cmds/changeMem.py hyperflow-engine-deployment.yml del
 else
