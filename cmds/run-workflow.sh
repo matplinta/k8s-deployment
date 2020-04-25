@@ -27,9 +27,9 @@ ALIASES=(
 
 # init workflows: data container name corresponding to worker container appropriate
 declare -A WORKFLOWS=( 
-    ["hyperflowwms/montage-workflow-data:montage0.25-bf0b1b4450c201ee5f549c7f473d2ef0"]="hyperflowwms/montage-workflow-worker:v1.0.10"
-    ["matplinta/montage-workflow-data:montage1.0-v1"]="hyperflowwms/montage-workflow-worker:v1.0.10"
-    ["matplinta/montage-workflow-data:montage2.0-v1"]="hyperflowwms/montage-workflow-worker:v1.0.10"
+    ["matplinta/montage-workflow-data:montage0.25-v2"]="hyperflowwms/montage-workflow-worker:v1.0.10"
+    ["matplinta/montage-workflow-data:montage1.0-v2"]="hyperflowwms/montage-workflow-worker:v1.0.10"
+    ["matplinta/montage-workflow-data:montage2.0-v2"]="hyperflowwms/montage-workflow-worker:v1.0.10"
     # ["matplinta/montage2-workflow-data:montage0.25-v1"]="hyperflowwms/montage2-worker:latest"
     ["matplinta/montage2-workflow-data:montage0.001-v3"]="matplinta/montage2-worker:v1"
     # ["hyperflowwms/soykb-workflow-data:hyperflow-soykb-example-f6f69d6ca3ebd9fe2458804b59b4ef71"]="hyperflowwms/soykb-workflow-worker:v1.0.10-1-g95b7caf"
@@ -200,36 +200,36 @@ log ":: Showing container versions"
 (printf "Deployment Image\n" ; grep -rP 'image:\s+(hyperflow|matplinta)' . | awk '{ print $1, $3 }') | column -t
 
 # start kubernetes
-# log ":: Applying k8s deployments"
-# if [[ "$WORKFLOW_NAME" =~ "soykb" ]]
-# then
-#     log ":: SoyKB workflow; changing minimal container memory request of hyperflow"
-#     python3 cmds/changeMem.py hyperflow-engine-deployment.yml $SOYKB_MEM
-#     apply_k8s
-#     python3 cmds/changeMem.py hyperflow-engine-deployment.yml del
-# else
-#     apply_k8s
-# fi
+log ":: Applying k8s deployments"
+if [[ "$WORKFLOW_NAME" =~ "soykb" ]]
+then
+    log ":: SoyKB workflow; changing minimal container memory request of hyperflow"
+    python3 cmds/changeMem.py hyperflow-engine-deployment.yml $SOYKB_MEM
+    apply_k8s
+    python3 cmds/changeMem.py hyperflow-engine-deployment.yml del
+else
+    apply_k8s
+fi
 
 
-# log ":: Waiting for hyperflow-engine container to start..."
-# kubectl wait --for=condition=ready --timeout=-10s --selector=name=hyperflow-engine pod  && log ":: Container hyperflow-engine is running..."
-# kubectl get pods 
+log ":: Waiting for hyperflow-engine container to start..."
+kubectl wait --for=condition=ready --timeout=-10s --selector=name=hyperflow-engine pod  && log ":: Container hyperflow-engine is running..."
+kubectl get pods 
 
-# log ":: Show hyperflow env variables and indicate start of running workflow:"
-# kubectl logs $(kubectl get pods --selector=name=hyperflow-engine --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') | grep -P 'HF_VAR|Running workflow'
+log ":: Show hyperflow env variables and indicate start of running workflow:"
+kubectl logs $(kubectl get pods --selector=name=hyperflow-engine --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') | grep -P 'HF_VAR|Running workflow'
 
-# log ":: Waiting for workflow to finish..."
-# kubectl wait --for=condition=complete --timeout=-10s --selector=name=logs-parser job && log ":: logs-parser job finished"
+log ":: Waiting for workflow to finish..."
+kubectl wait --for=condition=complete --timeout=-10s --selector=name=logs-parser job && log ":: logs-parser job finished"
 
-# if [[ "$WORKFLOW_NAME" =~ "montage" ]]; then
-#     log ":: Check for jpg file in nfs storage"
-#     kubectl exec $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') --container nfs-server /bin/ls /exports | grep -i jpg
-# fi
+if [[ "$WORKFLOW_NAME" =~ "montage" ]]; then
+    log ":: Check for jpg file in nfs storage"
+    kubectl exec $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') --container nfs-server /bin/ls /exports | grep -i jpg
+fi
 
 PARSED_DIR_REMOTE_NAME="$(kubectl exec -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') ls /exports/parsed)"
 # handle if PARSED_DIR_REMOTE_NAME is empty
-if [ -z "$PARSED_DIR_REMOTE_NAME"]; then
+if [ -z "$PARSED_DIR_REMOTE_NAME" ]; then
     err "## Remote logs dir is non-existant!"
     # leave k8s config after workflow finishes
     [ $KUBERNETES_WAIT -eq 0 ] && kill_k8s
