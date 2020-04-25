@@ -196,35 +196,49 @@ fi
 log ":: List all nodes"
 kubectl get nodes
 
+log ":: Showing container versions"
+(printf "Deployment Image\n" ; grep -rP 'image:\s+(hyperflow|matplinta)' . | awk '{ print $1, $3 }') | column -t
+
 # start kubernetes
-log ":: Applying k8s deployments"
-if [[ "$WORKFLOW_NAME" =~ "soykb" ]]
-then
-    log ":: SoyKB workflow; changing minimal container memory request of hyperflow"
-    python3 cmds/changeMem.py hyperflow-engine-deployment.yml $SOYKB_MEM
-    apply_k8s
-    python3 cmds/changeMem.py hyperflow-engine-deployment.yml del
-else
-    apply_k8s
-fi
+# log ":: Applying k8s deployments"
+# if [[ "$WORKFLOW_NAME" =~ "soykb" ]]
+# then
+#     log ":: SoyKB workflow; changing minimal container memory request of hyperflow"
+#     python3 cmds/changeMem.py hyperflow-engine-deployment.yml $SOYKB_MEM
+#     apply_k8s
+#     python3 cmds/changeMem.py hyperflow-engine-deployment.yml del
+# else
+#     apply_k8s
+# fi
 
 
-log ":: Waiting for hyperflow-engine container to start..."
-kubectl wait --for=condition=ready --timeout=-10s --selector=name=hyperflow-engine pod  && log ":: Container hyperflow-engine is running..."
-kubectl get pods 
+# log ":: Waiting for hyperflow-engine container to start..."
+# kubectl wait --for=condition=ready --timeout=-10s --selector=name=hyperflow-engine pod  && log ":: Container hyperflow-engine is running..."
+# kubectl get pods 
 
-log ":: Show hyperflow env variables and indicate start of running workflow:"
-kubectl logs $(kubectl get pods --selector=name=hyperflow-engine --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') | grep -P 'HF_VAR|Running workflow'
+# log ":: Show hyperflow env variables and indicate start of running workflow:"
+# kubectl logs $(kubectl get pods --selector=name=hyperflow-engine --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') | grep -P 'HF_VAR|Running workflow'
 
-log ":: Waiting for workflow to finish..."
-kubectl wait --for=condition=complete --timeout=-10s --selector=name=logs-parser job && log ":: logs-parser job finished"
+# log ":: Waiting for workflow to finish..."
+# kubectl wait --for=condition=complete --timeout=-10s --selector=name=logs-parser job && log ":: logs-parser job finished"
 
-if [[ "$WORKFLOW_NAME" =~ "montage" ]]; then
-    log ":: Check for jpg file in nfs storage"
-    kubectl exec $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') --container nfs-server /bin/ls /exports | grep -i jpg
-fi
+# if [[ "$WORKFLOW_NAME" =~ "montage" ]]; then
+#     log ":: Check for jpg file in nfs storage"
+#     kubectl exec $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') --container nfs-server /bin/ls /exports | grep -i jpg
+# fi
 
 PARSED_DIR_REMOTE_NAME="$(kubectl exec -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') ls /exports/parsed)"
+# handle if PARSED_DIR_REMOTE_NAME is empty
+if [ -z "$PARSED_DIR_REMOTE_NAME"]; then
+    err "## Remote logs dir is non-existant!"
+    # leave k8s config after workflow finishes
+    [ $KUBERNETES_WAIT -eq 0 ] && kill_k8s
+    # kill cluster
+    [ $CLUSTER_KILL -eq 1 ] && delete_cluster
+    err "## Exiting..."
+    exit 1
+fi
+
 mkdir -p logs/$PROVIDER
 LOGS_DIR=logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME
 
@@ -235,8 +249,7 @@ for name in  logs-hf.tar.gz workflow.json; do
 done
 
 log ":: Create nodes.log"
-mkdir -p tmp && kubectl get pod -o=custom-columns=NODE:.spec.nodeName,NAME:.metadata.name -n default | grep -P 'job|NAME' > $LOGS_DIR/nodes.log
-# kubectl cp tmp/nodes.log -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):/exports
+kubectl get pod -o=custom-columns=NODE:.spec.nodeName,NAME:.metadata.name -n default | grep -P 'job|NAME' > $LOGS_DIR/nodes.log
 # cmds/cp-logs-hf.sh tmp/logs-hf-newest
 files_no=$(ls -1 $LOGS_DIR | wc -l)
 
@@ -247,7 +260,11 @@ if [ $files_no -eq $copied_files_no ]; then
     log ":: All logs successfully copied"
     ls $LOGS_DIR
 else
-    err ":: Not all logs copied, something went wrong!"
+    err "## Not all logs copied, something went wrong!"
+    err "## Listing local collected logs"
+    ls -1 $LOGS_DIR
+    err "## Listing gcloud collected logs"
+    gsutil ls gs://hyperflow-parsed-data/$PARSED_DIR_REMOTE_NAME
 fi
 
 # leave k8s config after workflow finishes
