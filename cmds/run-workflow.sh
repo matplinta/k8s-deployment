@@ -16,6 +16,8 @@ PROJECT_ID=automatize-added-account-token
 PROVIDER=gcloud                             # aws or gcloud
 NODES=3                                     # no of nodes
 
+SOYKB_MEM="1050Mi"
+
 ALIASES=(
     montage0.25
     montage1.0
@@ -42,6 +44,10 @@ function show_workflows() {
 # init functions
 function log () {
     [[ $_V -eq 1 ]] && echo -e "$COLOR$@\e[0m"
+}
+
+function err () {
+    [[ $_V -eq 1 ]] && echo -e "\e[31m$@\e[0m"
 }
 
 function usage() { 
@@ -104,6 +110,8 @@ function delete_cluster() {
     elif [ "$PROVIDER" = "aws" ]; then
         eksctl delete cluster --region eu-west-1 --name $CLUSTER_NAME --wait && log ":: Cluster deleted successfully!"
     fi
+    # aws eks delete-nodegroup --cluster-name cluster-a --nodegroup-name node-pool
+    # aws eks delete-cluster --name cluster-a
 }
 
 if [ $# -eq 0 ]; then
@@ -174,7 +182,7 @@ if [ $CLUSTER_CREATE -eq 1 ]; then
         # gcloud config set project automatize-added-account-token
         cmds/create-cluster.sh $CLUSTER_NAME $NODES
     elif [ "$PROVIDER" = "aws" ]; then
-        eksctl create cluster --name cluster-aws --region eu-west-1 --nodegroup-name node-pool --node-type t3.micro --nodes $NODES --nodes-min $NODES --nodes-max $NODES --node-volume-size 20 --ssh-access
+        eksctl create cluster --name cluster-aws --region eu-west-1 --nodegroup-name node-pool --node-type t3.medium --nodes $NODES --nodes-min $NODES --nodes-max $NODES --node-volume-size 20 --ssh-access
     fi
 fi
 
@@ -190,11 +198,10 @@ kubectl get nodes
 
 # start kubernetes
 log ":: Applying k8s deployments"
-# cmds/apply-full-k8s.sh
 if [[ "$WORKFLOW_NAME" =~ "soykb" ]]
 then
     log ":: SoyKB workflow; changing minimal container memory request of hyperflow"
-    python3 cmds/changeMem.py hyperflow-engine-deployment.yml 800Mi
+    python3 cmds/changeMem.py hyperflow-engine-deployment.yml $SOYKB_MEM
     apply_k8s
     python3 cmds/changeMem.py hyperflow-engine-deployment.yml del
 else
@@ -216,27 +223,34 @@ if [[ "$WORKFLOW_NAME" =~ "montage" ]]; then
     log ":: Check for jpg file in nfs storage"
     kubectl exec $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') --container nfs-server /bin/ls /exports | grep -i jpg
 fi
-# kubectl get pods -o go-template='{{- define "checkStatus" -}}name={{- .metadata.name -}};nodeName={{- .spec.nodeName -}};{{- range .status.conditions -}}{{- .type -}}={{- .lastTransitionTime }};{{- end -}}{{- printf "\n" -}}{{- end -}}{{- if .items -}}{{- range .items -}}{{ template "checkStatus" . }}{{- end -}}{{- else -}}{{ template "checkStatus" . }}{{- end -}}'
 
-log ":: Copy nodes.log to nfs server"
-mkdir -p tmp && kubectl get pod -o=custom-columns=NODE:.spec.nodeName,NAME:.metadata.name -n default | grep -P 'job|NAME' > tmp/nodes.log
-kubectl cp tmp/nodes.log -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):/exports
-
-LOGS_DIR=logs/$PROVIDER/$WORKFLOW_NAME
-mkdir -p $LOGS_DIR
+PARSED_DIR_REMOTE_NAME="$(kubectl exec -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') ls /exports/parsed)"
+mkdir -p logs/$PROVIDER
+LOGS_DIR=logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME
 
 log ":: Copying parsed logs to $LOGS_DIR"
-for file in job_descriptions.jsonl metrics.jsonl sys_info.jsonl nodes.log logs-hf.tar.gz; do
-    kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/$file $LOGS_DIR/$file
+kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/parsed/$PARSED_DIR_REMOTE_NAME logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME
+for name in  logs-hf.tar.gz workflow.json; do
+    kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/$name logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME/$name
 done
-ls -1 $LOGS_DIR
 
-cmds/cp-logs-hf.sh tmp/logs-hf-newest
+log ":: Create nodes.log"
+mkdir -p tmp && kubectl get pod -o=custom-columns=NODE:.spec.nodeName,NAME:.metadata.name -n default | grep -P 'job|NAME' > $LOGS_DIR/nodes.log
+# kubectl cp tmp/nodes.log -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):/exports
+# cmds/cp-logs-hf.sh tmp/logs-hf-newest
+files_no=$(ls -1 $LOGS_DIR | wc -l)
+
+log ":: Copying data to the remote bucket"
+gsutil -m cp -r $LOGS_DIR gs://hyperflow-parsed-data/ >/dev/null 2>&1
+copied_files_no=$(gsutil ls gs://hyperflow-parsed-data/$PARSED_DIR_REMOTE_NAME | wc -l)
+if [ $files_no -eq $copied_files_no ]; then
+    log ":: All logs successfully copied"
+    ls $LOGS_DIR
+else
+    err ":: Not all logs copied, something went wrong!"
+fi
 
 # leave k8s config after workflow finishes
 [ $KUBERNETES_WAIT -eq 0 ] && kill_k8s
 # kill cluster
 [ $CLUSTER_KILL -eq 1 ] && delete_cluster
-
-# aws eks delete-nodegroup --cluster-name cluster-a --nodegroup-name node-pool
-# aws eks delete-cluster --name cluster-a
