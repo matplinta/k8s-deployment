@@ -30,6 +30,7 @@ declare -A WORKFLOWS=(
     ["matplinta/montage-workflow-data:montage0.25-v2"]="hyperflowwms/montage-workflow-worker:v1.0.10"
     ["matplinta/montage-workflow-data:montage1.0-v2"]="hyperflowwms/montage-workflow-worker:v1.0.10"
     ["matplinta/montage-workflow-data:montage2.0-v2"]="hyperflowwms/montage-workflow-worker:v1.0.10"
+    ["matplinta/soykb-workflow-data:size2v2"]="matplinta/soykb-workflow-worker:archv4"
     # ["matplinta/montage2-workflow-data:montage0.25-v1"]="hyperflowwms/montage2-worker:latest"
     ["matplinta/montage2-workflow-data:montage0.001-v3"]="matplinta/montage2-worker:v1"
     # ["hyperflowwms/soykb-workflow-data:hyperflow-soykb-example-f6f69d6ca3ebd9fe2458804b59b4ef71"]="hyperflowwms/soykb-workflow-worker:v1.0.10-1-g95b7caf"
@@ -197,7 +198,7 @@ log ":: List all nodes"
 kubectl get nodes
 
 log ":: Showing container versions"
-(printf "Deployment Image\n" ; grep -rP 'image:\s+(hyperflow|matplinta)' . | awk '{ print $1, $3 }') | column -t
+(printf "Deployment Image\n" ; grep -rP ':\s+(hyperflowwms|matplinta)' . | awk '{ print $1, $3 }') | column -t
 
 # start kubernetes
 log ":: Applying k8s deployments"
@@ -254,7 +255,7 @@ kubectl get pod -o=custom-columns=NODE:.spec.nodeName,NAME:.metadata.name -n def
 files_no=$(ls -1 $LOGS_DIR | wc -l)
 
 log ":: Copying data to the remote bucket"
-gsutil -m cp -r $LOGS_DIR gs://hyperflow-parsed-data/ >/dev/null 2>&1
+gsutil -m cp -r $LOGS_DIR gs://hyperflow-parsed-data/$LOGS_DIR >/dev/null 2>&1
 copied_files_no=$(gsutil ls gs://hyperflow-parsed-data/$PARSED_DIR_REMOTE_NAME | wc -l)
 if [ $files_no -eq $copied_files_no ]; then
     log ":: All logs successfully copied"
