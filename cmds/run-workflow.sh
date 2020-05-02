@@ -15,8 +15,12 @@ WORKFLOW_NAME=montage0.25
 PROJECT_ID=automatize-added-account-token
 PROVIDER=gcloud                             # aws or gcloud
 NODES=3                                     # no of nodes
+MACHINE_TYPE=e2-small
+# GCLOUD: e2-highcpu-4, e2-small, 
+# AWS:    t3.medium
 
-SOYKB_MEM="1050Mi"
+# SOYKB_MEM="1050Mi"
+SOYKB_MEM="4096"
 
 ALIASES=(
     montage0.25
@@ -27,13 +31,21 @@ ALIASES=(
 
 # init workflows: data container name corresponding to worker container appropriate
 declare -A WORKFLOWS=( 
-    ["matplinta/montage-workflow-data:montage0.25-v2"]="hyperflowwms/montage-workflow-worker:v1.0.10"
+    ["matplinta/montage-workflow-data:montage0.25-v2"]="matplinta/montage-workflow-worker:racefix"
+    # ["matplinta/montage-workflow-data:montage0.25-v2"]="hyperflowwms/montage-workflow-worker:v1.0.10"
     ["matplinta/montage-workflow-data:montage1.0-v2"]="hyperflowwms/montage-workflow-worker:v1.0.10"
     ["matplinta/montage-workflow-data:montage2.0-v2"]="hyperflowwms/montage-workflow-worker:v1.0.10"
-    ["matplinta/soykb-workflow-data:size2v2"]="matplinta/soykb-workflow-worker:archv4"
-    # ["matplinta/montage2-workflow-data:montage0.25-v1"]="hyperflowwms/montage2-worker:latest"
-    ["matplinta/montage2-workflow-data:montage0.001-v3"]="matplinta/montage2-worker:v1"
-    # ["hyperflowwms/soykb-workflow-data:hyperflow-soykb-example-f6f69d6ca3ebd9fe2458804b59b4ef71"]="hyperflowwms/soykb-workflow-worker:v1.0.10-1-g95b7caf"
+    ["matplinta/montage2-workflow-data:degree0.01"]="matplinta/montage2-workflow-worker"
+    ["matplinta/montage2-workflow-data:degree0.25"]="matplinta/montage2-workflow-worker"
+    ["matplinta/montage2-workflow-data:degree1.0"]="matplinta/montage2-workflow-worker"
+    ["matplinta/montage2-workflow-data:degree2.0"]="matplinta/montage2-workflow-worker"
+    ["matplinta/soykb-workflow-data:size2"]="matplinta/soykb-workflow-worker:archv4"
+    ["matplinta/soykb-workflow-data:size4"]="matplinta/soykb-workflow-worker:archv4"
+    ["matplinta/soykb-workflow-data:size8"]="matplinta/soykb-workflow-worker:archv4"
+    ["matplinta/soykb-workflow-data:size16"]="matplinta/soykb-workflow-worker:archv4"
+    ["matplinta/soykb-workflow-data:size32"]="matplinta/soykb-workflow-worker:archv4"
+    ["matplinta/soykb-workflow-data:size48"]="matplinta/soykb-workflow-worker:archv4"
+    
     ["hyperflowwms/soykb-workflow-data:hyperflow-soykb-example-f6f69d6ca3ebd9fe2458804b59b4ef71"]="hyperflowwms/soykb-workflow-worker:v1.0.11"
 )
 
@@ -52,11 +64,13 @@ function err () {
 }
 
 function usage() { 
-echo -e "Usage: complete-workflow-run.sh [OPTION]...
+echo -e "Usage: run-workflow.sh [OPTION]...
   -r\t<workflow>\t\trun specified workflow (you can check it with -l parameter)
   -n\t<cluster_name>\t\tto set cluster name
   -p\t<provider>\t\tspecify provider used. Defaults to gcloud
+  -P\t<project_id>\tgcloud project id
   -N\t<node_no>\t\tspecify nodes quantity
+  -m\t<machine_type>\tspecify compute machine type to use (EC2 or ComputeEngine)
   -c\tto create new cluster
   -l\tlist all available workflows
   -k\tkill cluster in the end
@@ -68,11 +82,12 @@ exit 0
 }
 
 function change_workflow() {
-    if [[ 1 -eq `for i in "${!WORKFLOWS[@]}"; do echo $i; done | grep "$WORKFLOW_NAME" | wc -l` ]]; then
-        W_DATA=`for i in "${!WORKFLOWS[@]}"; do echo $i; done | grep "$WORKFLOW_NAME"`
+    if [[ `for i in "${!WORKFLOWS[@]}"; do echo $i; done | grep "$WORKFLOW_NAME" | wc -l` -ge 1 ]]; then
+        for i in "${!WORKFLOWS[@]}"; do echo $i; done | grep "$WORKFLOW_NAME"
+        W_DATA=`for i in "${!WORKFLOWS[@]}"; do echo $i; done | grep "$WORKFLOW_NAME" | tail -n1`
         W_WORKER=${WORKFLOWS[$W_DATA]}
-        python3 cmds/changeWorker.py hyperflow-engine-deployment.yml $W_WORKER
-        python3 cmds/changeDataContainer.py nfs-server.yml $W_DATA
+        python3 cmds/changeWorker.py hyperflow-engine-deployment-edit.yml $W_WORKER
+        python3 cmds/changeDataContainer.py nfs-server-edit.yml $W_DATA
     else
         echo "Could not find specified workflow: \"$WORKFLOW_NAME\""
         exit 1
@@ -85,10 +100,10 @@ function apply_k8s() {
     kubectl apply -f nfs-server-service.yml
     kubectl apply -f redis-service.yml
     kubectl apply -f redis.yml
-    kubectl apply -f nfs-server.yml
+    kubectl apply -f nfs-server-edit.yml
     sed -i -E "s/server:.*/server: `kubectl get services | grep nfs-server | awk '{ print $3 }'`/" pv-pvc.yml
     kubectl apply -f pv-pvc.yml
-    kubectl apply -f hyperflow-engine-deployment.yml
+    kubectl apply -f hyperflow-engine-deployment-edit.yml
     kubectl apply -f parser-job.yml
 }
 
@@ -103,6 +118,25 @@ function kill_k8s() {
 
     # check if all config is gone
     [ `kubectl get pv,pvc,pod,deployment,svc -n default | wc -l` -eq 2 ] && log ":: Kubernetes config on cluster has been cleaned up" || log ":: Could not properly clean up Kubernetes config. Try it yoursefl:\n\"kubectl delete deployment,pod,svc,pv,pvc --all -n default --timeout 30s || kubectl delete pod --all -n default --force --grace-period=0\""
+}
+
+function get_k8s_credentials {
+    log ":: Getting k8s cluster credentials"
+    if [ "$PROVIDER" = "gcloud" ]; then
+        gcloud container clusters get-credentials $CLUSTER_NAME --zone europe-west4-a --project $PROJECT_ID
+    elif [ "$PROVIDER" = "aws" ]; then
+        aws eks --region eu-west-1 update-kubeconfig --name $CLUSTER_NAME
+    fi
+}
+
+function create_cluster() {
+    log ":: Creating cluster $CLUSTER_NAME"
+    if [ "$PROVIDER" = "gcloud" ]; then
+        # gcloud config set project automatize-added-account-token
+        cmds/create-cluster.sh $CLUSTER_NAME $NODES $PROJECT_ID $MACHINE_TYPE
+    elif [ "$PROVIDER" = "aws" ]; then
+        eksctl create cluster --name $CLUSTER_NAME --region eu-west-1 --nodegroup-name node-pool --node-type "$MACHINE_TYPE" --nodes $NODES --nodes-min $NODES --nodes-max $NODES --node-volume-size 20 --ssh-access
+    fi
 }
 
 function delete_cluster() {
@@ -124,7 +158,7 @@ fi
 cd "$(dirname "$0")" && cd ..
 
 
-while getopts "h?ckvwodln:N:r:p:" opt; do
+while getopts "h?ckvwodln:N:P:r:p:m:" opt; do
     case "$opt" in
     c)  CLUSTER_CREATE=1
         ;;
@@ -134,12 +168,16 @@ while getopts "h?ckvwodln:N:r:p:" opt; do
     h|\?)
         usage
         ;;
+    P)  PROJECT_ID=$OPTARG
+        ;;
     k)  CLUSTER_KILL=1
         ;;
     l)  for i in "${ALIASES[@]}"; do 
             echo $i
         done
         exit 0
+        ;;
+    m)  MACHINE_TYPE=$OPTARG
         ;;
     n)  CLUSTER_NAME=$OPTARG
         [ -z "$CLUSTER_NAME" ] && log ":: Empty cluster name variable\nExiting..." && exit 1
@@ -159,7 +197,6 @@ while getopts "h?ckvwodln:N:r:p:" opt; do
         fi
         ;;
     r)  WORKFLOW_NAME=$OPTARG
-        change_workflow
         ;;
     w)  KUBERNETES_WAIT=1
         ;;
@@ -178,36 +215,31 @@ log ":: Provider set to $PROVIDER"
 
 
 if [ $CLUSTER_CREATE -eq 1 ]; then
-    log ":: Creating cluster $CLUSTER_NAME"
-    if [ "$PROVIDER" = "gcloud" ]; then
-        # gcloud config set project automatize-added-account-token
-        cmds/create-cluster.sh $CLUSTER_NAME $NODES
-    elif [ "$PROVIDER" = "aws" ]; then
-        eksctl create cluster --name cluster-aws --region eu-west-1 --nodegroup-name node-pool --node-type t3.medium --nodes $NODES --nodes-min $NODES --nodes-max $NODES --node-volume-size 20 --ssh-access
-    fi
+    create_cluster
 fi
 
-log ":: Getting k8s cluster credentials"
-if [ "$PROVIDER" = "gcloud" ]; then
-    gcloud container clusters get-credentials $CLUSTER_NAME --zone europe-west4-a --project $PROJECT_ID
-elif [ "$PROVIDER" = "aws" ]; then
-    aws eks --region eu-west-1 update-kubeconfig --name $CLUSTER_NAME
-fi
+get_k8s_credentials
 
 log ":: List all nodes"
 kubectl get nodes
 
+
+# make working copies of ymls & configure k8s deployments
+cp hyperflow-engine-deployment.yml hyperflow-engine-deployment-edit.yml
+cp nfs-server.yml nfs-server-edit.yml
+change_workflow
+
 log ":: Showing container versions"
-(printf "Deployment Image\n" ; grep -rP ':\s+(hyperflowwms|matplinta)' . | awk '{ print $1, $3 }') | column -t
+(printf "Deployment Image\n" ; grep -rP ':\s+(hyperflowwms|matplinta)' . | grep -P 'edit|parser' | awk '{ print $1, $3 }') | column -t
 
 # start kubernetes
 log ":: Applying k8s deployments"
 if [[ "$WORKFLOW_NAME" =~ "soykb" ]]
 then
     log ":: SoyKB workflow; changing minimal container memory request of hyperflow"
-    python3 cmds/changeMem.py hyperflow-engine-deployment.yml $SOYKB_MEM
+    python3 cmds/changeMem.py hyperflow-engine-deployment-edit.yml $SOYKB_MEM
     apply_k8s
-    python3 cmds/changeMem.py hyperflow-engine-deployment.yml del
+    python3 cmds/changeMem.py hyperflow-engine-deployment-edit.yml del
 else
     apply_k8s
 fi
@@ -231,12 +263,12 @@ fi
 PARSED_DIR_REMOTE_NAME="$(kubectl exec -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') ls /exports/parsed)"
 # handle if PARSED_DIR_REMOTE_NAME is empty
 if [ -z "$PARSED_DIR_REMOTE_NAME" ]; then
-    err "## Remote logs dir is non-existant!"
+    err "## Remote logs dir is non-existant! Parsing must have gone wrong."
     # leave k8s config after workflow finishes
     [ $KUBERNETES_WAIT -eq 0 ] && kill_k8s
     # kill cluster
-    [ $CLUSTER_KILL -eq 1 ] && delete_cluster
     err "## Exiting..."
+    [ $CLUSTER_KILL -eq 1 ] && delete_cluster
     exit 1
 fi
 
@@ -255,8 +287,10 @@ kubectl get pod -o=custom-columns=NODE:.spec.nodeName,NAME:.metadata.name -n def
 files_no=$(ls -1 $LOGS_DIR | wc -l)
 
 log ":: Copying data to the remote bucket"
-gsutil -m cp -r $LOGS_DIR gs://hyperflow-parsed-data/$LOGS_DIR >/dev/null 2>&1
-copied_files_no=$(gsutil ls gs://hyperflow-parsed-data/$PARSED_DIR_REMOTE_NAME | wc -l)
+# aws s3 sync $LOGS_DIR s3://exec-prediction-data/$PROVIDER/$PARSED_DIR_REMOTE_NAME
+gsutil -m cp -r $LOGS_DIR gs://hyperflow-parsed-data/$PROVIDER/$PARSED_DIR_REMOTE_NAME >/dev/null 2>&1
+# copied_files_no=$(aws s3 ls s3://exec-prediction-data/$PROVIDER/$PARSED_DIR_REMOTE_NAME | wc -l)
+copied_files_no=$(gsutil ls gs://hyperflow-parsed-data/$PROVIDER/$PARSED_DIR_REMOTE_NAME | wc -l)
 if [ $files_no -eq $copied_files_no ]; then
     log ":: All logs successfully copied"
     ls $LOGS_DIR
