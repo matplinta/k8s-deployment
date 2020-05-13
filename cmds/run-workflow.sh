@@ -31,22 +31,23 @@ ALIASES=(
 
 # init workflows: data container name corresponding to worker container appropriate
 declare -A WORKFLOWS=( 
-    ["matplinta/montage-workflow-data:montage0.25-v2"]="matplinta/montage-workflow-worker:racefix"
-    # ["matplinta/montage-workflow-data:montage0.25-v2"]="hyperflowwms/montage-workflow-worker:v1.0.10"
-    ["matplinta/montage-workflow-data:montage1.0-v2"]="hyperflowwms/montage-workflow-worker:v1.0.10"
-    ["matplinta/montage-workflow-data:montage2.0-v2"]="hyperflowwms/montage-workflow-worker:v1.0.10"
+    ["matplinta/montage-workflow-data:degree0.25"]="matplinta/montage-workflow-worker"
+    ["matplinta/montage-workflow-data:degree1.0"]="hyperflowwms/montage-workflow-worker"
+    ["matplinta/montage-workflow-data:degree2.0"]="matplinta/montage-workflow-worker"
+
     ["matplinta/montage2-workflow-data:degree0.01"]="matplinta/montage2-workflow-worker"
     ["matplinta/montage2-workflow-data:degree0.25"]="matplinta/montage2-workflow-worker"
     ["matplinta/montage2-workflow-data:degree1.0"]="matplinta/montage2-workflow-worker"
     ["matplinta/montage2-workflow-data:degree2.0"]="matplinta/montage2-workflow-worker"
-    ["matplinta/soykb-workflow-data:size2"]="matplinta/soykb-workflow-worker:archv4"
-    ["matplinta/soykb-workflow-data:size4"]="matplinta/soykb-workflow-worker:archv4"
-    ["matplinta/soykb-workflow-data:size8"]="matplinta/soykb-workflow-worker:archv4"
-    ["matplinta/soykb-workflow-data:size16"]="matplinta/soykb-workflow-worker:archv4"
-    ["matplinta/soykb-workflow-data:size32"]="matplinta/soykb-workflow-worker:archv4"
-    ["matplinta/soykb-workflow-data:size48"]="matplinta/soykb-workflow-worker:archv4"
+
+    ["matplinta/soykb-workflow-data:size2"]="matplinta/soykb-workflow-worker"
+    ["matplinta/soykb-workflow-data:size4"]="matplinta/soykb-workflow-worker"
+    ["matplinta/soykb-workflow-data:size8"]="matplinta/soykb-workflow-worker"
+    ["matplinta/soykb-workflow-data:size16"]="matplinta/soykb-workflow-worker"
+    ["matplinta/soykb-workflow-data:size32"]="matplinta/soykb-workflow-worker"
+    ["matplinta/soykb-workflow-data:size48"]="matplinta/soykb-workflow-worker"
     
-    ["hyperflowwms/soykb-workflow-data:hyperflow-soykb-example-f6f69d6ca3ebd9fe2458804b59b4ef71"]="hyperflowwms/soykb-workflow-worker:v1.0.11"
+    # ["hyperflowwms/soykb-workflow-data:hyperflow-soykb-example-f6f69d6ca3ebd9fe2458804b59b4ef71"]="hyperflowwms/soykb-workflow-worker:v1.0.11"
 )
 
 function show_workflows() {
