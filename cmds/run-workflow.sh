@@ -12,10 +12,11 @@ CLUSTER_CREATE=0
 CLUSTER_KILL=0
 KUBERNETES_WAIT=0
 WORKFLOW_NAME=montage0.25
-PROJECT_ID=automatize-added-account-token
+PROJECT_ID=automatize-added-account-token   # hyperflow-268022 
 PROVIDER=gcloud                             # aws or gcloud
 NODES=3                                     # no of nodes
 MACHINE_TYPE=e2-small
+REGION=europe-west4-a
 # GCLOUD: e2-highcpu-4, e2-small, 
 # AWS:    t3.medium
 
@@ -37,7 +38,7 @@ declare -A WORKFLOWS=(
 
     ["matplinta/montage2-workflow-data:degree0.01"]="matplinta/montage2-workflow-worker"
     ["matplinta/montage2-workflow-data:degree0.25"]="matplinta/montage2-workflow-worker"
-    ["matplinta/montage2-workflow-data:degree1.0"]="matplinta/montage2-workflow-worker"
+    ["matplinta/montage2-workflow-data:degree1.0"]="matplinta/montage2-workflow-worker:exec1.0.13"
     ["matplinta/montage2-workflow-data:degree2.0"]="matplinta/montage2-workflow-worker"
 
     ["matplinta/soykb-workflow-data:size2"]="matplinta/soykb-workflow-worker"
@@ -70,6 +71,7 @@ echo -e "Usage: run-workflow.sh [OPTION]...
   -n\t<cluster_name>\t\tto set cluster name
   -p\t<provider>\t\tspecify provider used. Defaults to gcloud
   -P\t<project_id>\tgcloud project id
+  -R\t<zone/region>\t region or zone id
   -N\t<node_no>\t\tspecify nodes quantity
   -m\t<machine_type>\tspecify compute machine type to use (EC2 or ComputeEngine)
   -c\tto create new cluster
@@ -87,8 +89,8 @@ function change_workflow() {
         for i in "${!WORKFLOWS[@]}"; do echo $i; done | grep "$WORKFLOW_NAME"
         W_DATA=`for i in "${!WORKFLOWS[@]}"; do echo $i; done | grep "$WORKFLOW_NAME" | tail -n1`
         W_WORKER=${WORKFLOWS[$W_DATA]}
-        python3 cmds/changeWorker.py hyperflow-engine-deployment-edit.yml $W_WORKER
-        python3 cmds/changeDataContainer.py nfs-server-edit.yml $W_DATA
+        python3 cmds/changeWorker.py k8s/hyperflow-engine-deployment-edit.yml $W_WORKER
+        python3 cmds/changeDataContainer.py k8s/nfs-server-edit.yml $W_DATA
     else
         echo "Could not find specified workflow: \"$WORKFLOW_NAME\""
         exit 1
@@ -96,16 +98,17 @@ function change_workflow() {
 }
 
 function apply_k8s() {
-    kubectl apply -f crb.yml
-    kubectl apply -f cm.yml
-    kubectl apply -f nfs-server-service.yml
-    kubectl apply -f redis-service.yml
-    kubectl apply -f redis.yml
-    kubectl apply -f nfs-server-edit.yml
-    sed -i -E "s/server:.*/server: `kubectl get services | grep nfs-server | awk '{ print $3 }'`/" pv-pvc.yml
-    kubectl apply -f pv-pvc.yml
-    kubectl apply -f hyperflow-engine-deployment-edit.yml
-    kubectl apply -f parser-job.yml
+    kubectl apply -f k8s/crb.yml
+    kubectl apply -f k8s/cm.yml
+    kubectl apply -f k8s/nfs-server-service.yml
+    kubectl apply -f k8s/redis-service.yml
+    kubectl apply -f k8s/redis.yml
+    kubectl apply -f k8s/nfs-server-edit.yml
+    sed -i -E "s/server:.*/server: `kubectl get services | grep nfs-server | awk '{ print $3 }'`/" k8s/pv-pvc.yml
+    kubectl apply -f k8s/pv-pvc.yml
+    kubectl apply -f k8s/hyperflow-engine-deployment-edit.yml
+    kubectl apply -f k8s/parser-job.yml
+    # kubectl apply -f k8s/fbam-parser.yml
 }
 
 function kill_k8s() {
@@ -124,7 +127,7 @@ function kill_k8s() {
 function get_k8s_credentials {
     log ":: Getting k8s cluster credentials"
     if [ "$PROVIDER" = "gcloud" ]; then
-        gcloud container clusters get-credentials $CLUSTER_NAME --zone europe-west4-a --project $PROJECT_ID
+        gcloud container clusters get-credentials $CLUSTER_NAME --zone $REGION --project $PROJECT_ID
     elif [ "$PROVIDER" = "aws" ]; then
         aws eks --region eu-west-1 update-kubeconfig --name $CLUSTER_NAME
     fi
@@ -142,7 +145,7 @@ function create_cluster() {
 
 function delete_cluster() {
     if [ "$PROVIDER" = "gcloud" ]; then
-        gcloud container clusters delete $CLUSTER_NAME --quiet && log ":: Cluster deleted successfully!"
+        gcloud container clusters delete $CLUSTER_NAME --zone $REGION --project $PROJECT_ID --quiet && log ":: Cluster deleted successfully!"
     elif [ "$PROVIDER" = "aws" ]; then
         eksctl delete cluster --region eu-west-1 --name $CLUSTER_NAME --wait && log ":: Cluster deleted successfully!"
     fi
@@ -159,11 +162,14 @@ fi
 cd "$(dirname "$0")" && cd ..
 
 
-while getopts "h?ckvwodln:N:P:r:p:m:" opt; do
+while getopts "h?ckvwodgln:N:P:r:R:p:m:" opt; do
     case "$opt" in
     c)  CLUSTER_CREATE=1
         ;;
     d)  delete_cluster
+        exit 0
+        ;;
+    g)  get_k8s_credentials
         exit 0
         ;;
     h|\?)
@@ -199,6 +205,8 @@ while getopts "h?ckvwodln:N:P:r:p:m:" opt; do
         ;;
     r)  WORKFLOW_NAME=$OPTARG
         ;;
+    R)  REGION=$OPTARG
+        ;;
     w)  KUBERNETES_WAIT=1
         ;;
     v)  _V=1
@@ -226,23 +234,27 @@ kubectl get nodes
 
 
 # make working copies of ymls & configure k8s deployments
-cp hyperflow-engine-deployment.yml hyperflow-engine-deployment-edit.yml
-cp nfs-server.yml nfs-server-edit.yml
+cp k8s/hyperflow-engine-deployment.yml k8s/hyperflow-engine-deployment-edit.yml
+cp k8s/nfs-server.yml k8s/nfs-server-edit.yml
 change_workflow
 
 log ":: Showing container versions"
-(printf "Deployment Image\n" ; grep -rP ':\s+(hyperflowwms|matplinta)' . | grep -P 'edit|parser' | awk '{ print $1, $3 }') | column -t
+(printf "Deployment Image\n" ; grep -rP ':\s+(hyperflowwms|matplinta)' k8s | grep -P 'edit|parser' | awk '{ print $1, $3 }') | column -t
 
 # start kubernetes
 log ":: Applying k8s deployments"
 if [[ "$WORKFLOW_NAME" =~ "soykb" ]]
 then
     log ":: SoyKB workflow; changing minimal container memory request of hyperflow"
-    python3 cmds/changeMem.py hyperflow-engine-deployment-edit.yml $SOYKB_MEM
+    python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml $SOYKB_MEM
     apply_k8s
-    python3 cmds/changeMem.py hyperflow-engine-deployment-edit.yml del
+    python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml del
 else
+    # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_CPU_REQUEST 2
+    # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_MEM_REQUEST 4096Mi
     apply_k8s
+    # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_CPU_REQUEST del
+    # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_MEM_REQUEST del
 fi
 
 
@@ -258,10 +270,10 @@ kubectl wait --for=condition=complete --timeout=-10s --selector=name=logs-parser
 
 if [[ "$WORKFLOW_NAME" =~ "montage" ]]; then
     log ":: Check for jpg file in nfs storage"
-    kubectl exec $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') --container nfs-server /bin/ls /exports | grep -i jpg
+    kubectl exec $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') --container nfs-server -- /bin/ls /exports | grep --color -i jpg
 fi
 
-PARSED_DIR_REMOTE_NAME="$(kubectl exec -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') ls /exports/parsed)"
+PARSED_DIR_REMOTE_NAME="$(kubectl exec -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') -- ls /exports/parsed)"
 # handle if PARSED_DIR_REMOTE_NAME is empty
 if [ -z "$PARSED_DIR_REMOTE_NAME" ]; then
     err "## Remote logs dir is non-existant! Parsing must have gone wrong."
@@ -278,13 +290,11 @@ LOGS_DIR=logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME
 
 log ":: Copying parsed logs to $LOGS_DIR"
 kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/parsed/$PARSED_DIR_REMOTE_NAME logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME
+kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/fbam_parsed logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME
 for name in  logs-hf.tar.gz workflow.json; do
     kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/$name logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME/$name
 done
 
-log ":: Create nodes.log"
-kubectl get pod -o=custom-columns=NODE:.spec.nodeName,NAME:.metadata.name -n default | grep -P 'job|NAME' > $LOGS_DIR/nodes.log
-# cmds/cp-logs-hf.sh tmp/logs-hf-newest
 files_no=$(ls -1 $LOGS_DIR | wc -l)
 
 log ":: Copying data to the remote bucket"
