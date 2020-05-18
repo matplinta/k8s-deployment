@@ -23,22 +23,15 @@ REGION=europe-west4-a
 # SOYKB_MEM="1050Mi"
 SOYKB_MEM="4096"
 
-ALIASES=(
-    montage0.25
-    montage1.0
-    montage2.0
-    soykb-example
-)
-
 # init workflows: data container name corresponding to worker container appropriate
 declare -A WORKFLOWS=( 
     ["matplinta/montage-workflow-data:degree0.25"]="matplinta/montage-workflow-worker"
-    ["matplinta/montage-workflow-data:degree1.0"]="hyperflowwms/montage-workflow-worker"
+    ["matplinta/montage-workflow-data:degree1.0"]="matplinta/montage-workflow-worker"
     ["matplinta/montage-workflow-data:degree2.0"]="matplinta/montage-workflow-worker"
 
     ["matplinta/montage2-workflow-data:degree0.01"]="matplinta/montage2-workflow-worker"
     ["matplinta/montage2-workflow-data:degree0.25"]="matplinta/montage2-workflow-worker"
-    ["matplinta/montage2-workflow-data:degree1.0"]="matplinta/montage2-workflow-worker:exec1.0.13"
+    ["matplinta/montage2-workflow-data:degree1.0"]="matplinta/montage2-workflow-worker"
     ["matplinta/montage2-workflow-data:degree2.0"]="matplinta/montage2-workflow-worker"
 
     ["matplinta/soykb-workflow-data:size2"]="matplinta/soykb-workflow-worker"
@@ -52,8 +45,7 @@ declare -A WORKFLOWS=(
 )
 
 function show_workflows() {
-    printf "%20s %20s\n" 'Workflow name' 'Data container'
-    for wflow in "${!WORKFLOWS[@]}"; do printf "%20s %20s\n" "$wflow" "${WORKFLOWS[$wflow]}"; done
+    (printf "Workflow_name  Data_container\n" ; for wflow in "${!WORKFLOWS[@]}"; do echo "$wflow ${WORKFLOWS[$wflow]}"; done | sort -k1 | awk '{ print $1, $2 }') | column -t
 }
 
 # init functions
@@ -179,9 +171,10 @@ while getopts "h?ckvwodgln:N:P:r:R:p:m:" opt; do
         ;;
     k)  CLUSTER_KILL=1
         ;;
-    l)  for i in "${ALIASES[@]}"; do 
-            echo $i
-        done
+    l)  show_workflows
+        # for i in "${ALIASES[@]}"; do 
+        #     echo $i
+        # done
         exit 0
         ;;
     m)  MACHINE_TYPE=$OPTARG
@@ -290,7 +283,7 @@ LOGS_DIR=logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME
 
 log ":: Copying parsed logs to $LOGS_DIR"
 kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/parsed/$PARSED_DIR_REMOTE_NAME logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME
-kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/fbam_parsed logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME
+# kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/fbam_parsed logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME
 for name in  logs-hf.tar.gz workflow.json; do
     kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/$name logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME/$name
 done
