@@ -284,23 +284,25 @@ if [ -z "$PARSED_DIR_REMOTE_NAME" ]; then
     exit 1
 fi
 
-mkdir -p logs/$PROVIDER
-LOGS_DIR=logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME
+INSTANCE_TYPE="$(gcloud container clusters describe $CLUSTER_NAME --zone $REGION --project $PROJECT_ID | grep machineType | head -n1 | awk '{ print $2 }' )"
+
+mkdir -p logs/$PROVIDER/$INSTANCE_TYPE
+LOGS_DIR=logs/$PROVIDER/$INSTANCE_TYPE/$PARSED_DIR_REMOTE_NAME
 
 log ":: Copying parsed logs to $LOGS_DIR"
-kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/parsed/$PARSED_DIR_REMOTE_NAME logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME
+kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/parsed/$PARSED_DIR_REMOTE_NAME $LOGS_DIR
 # kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/fbam_parsed logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME
 for name in  logs-hf.tar.gz workflow.json; do
-    kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/$name logs/$PROVIDER/$PARSED_DIR_REMOTE_NAME/$name
+    kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/$name $LOGS_DIR/$name
 done
 
 files_no=$(ls -1 $LOGS_DIR | wc -l)
 
 log ":: Copying data to the remote bucket"
 # aws s3 sync $LOGS_DIR s3://exec-prediction-data/$PROVIDER/$PARSED_DIR_REMOTE_NAME
-gsutil -m cp -r $LOGS_DIR gs://hyperflow-parsed-data/$PROVIDER/$PARSED_DIR_REMOTE_NAME >/dev/null 2>&1
+gsutil -m cp -r $LOGS_DIR gs://hyperflow-parsed-data/$PROVIDER/$INSTANCE_TYPE/$PARSED_DIR_REMOTE_NAME >/dev/null 2>&1
 # copied_files_no=$(aws s3 ls s3://exec-prediction-data/$PROVIDER/$PARSED_DIR_REMOTE_NAME | wc -l)
-copied_files_no=$(gsutil ls gs://hyperflow-parsed-data/$PROVIDER/$PARSED_DIR_REMOTE_NAME | wc -l)
+copied_files_no=$(gsutil ls gs://hyperflow-parsed-data/$PROVIDER/$INSTANCE_TYPE/$PARSED_DIR_REMOTE_NAME | wc -l)
 if [ $files_no -eq $copied_files_no ]; then
     log ":: All logs successfully copied"
     ls $LOGS_DIR
@@ -309,7 +311,7 @@ else
     err "## Listing local collected logs"
     ls -1 $LOGS_DIR
     err "## Listing gcloud collected logs"
-    gsutil ls gs://hyperflow-parsed-data/$PARSED_DIR_REMOTE_NAME
+    gsutil ls gs://hyperflow-parsed-data/$PROVIDER/$INSTANCE_TYPE/$PARSED_DIR_REMOTE_NAME
 fi
 
 # leave k8s config after workflow finishes
