@@ -296,6 +296,8 @@ for name in  logs-hf.tar.gz workflow.json; do
     kubectl cp -c nfs-server $(kubectl get pods --selector=role=nfs-server --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}'):exports/$name $LOGS_DIR/$name
 done
 
+kubectl get nodes -o json > $LOGS_DIR/nodes_description.json
+
 files_no=$(ls -1 $LOGS_DIR | wc -l)
 
 log ":: Copying data to the remote bucket"
