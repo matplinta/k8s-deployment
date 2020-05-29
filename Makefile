@@ -2,8 +2,8 @@ TAG = $(shell git describe --tags --always)
 # PREFIX = $(shell git config --get remote.origin.url | tr ':.' '/'  | rev | cut -d '/' -f 3 | rev)
 # REPO_NAME = $(shell git config --get remote.origin.url | tr ':.' '/'  | rev | cut -d '/' -f 2 | rev)
 
-REPO_NAME = 'matplinta'
-PREFIX = 'k8s-runner'
+REPO_NAME = 'k8s-runner'
+PREFIX = 'matplinta'
 
 all: push
 

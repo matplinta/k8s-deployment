@@ -4,5 +4,7 @@ docker run -it \
     -v $(pwd):/tmp/certs \
     -v $(pwd)/logs:/logs \
     matplinta/k8s-runner:latest \
-    ./run-workflow.sh -p gcloud -n cluster-x -r montage-workflow-data:degree0.25
+    bash
+    # ./wrapper-run-workflow.sh
+    # ./run-workflow.sh -p gcloud -n cluster-x -P hyperflow-268022 -R europe-west2-a -r montage-workflow-data:degree1.0
     

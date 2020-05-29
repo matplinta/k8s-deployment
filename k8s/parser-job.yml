@@ -25,6 +25,7 @@ spec:
             echo "postprocStart flag mounted: " ; 
             ls -la /work_dir ;
             mkdir -p /work_dir/parsed ;
+            echo "Started parsing logs-hf" ;
             python3 /parser.py -s /work_dir/logs-hf -d /work_dir/parsed -w /work_dir/workflow.json ;
             cd /work_dir ;
             echo 1 > /work_dir/parsingFinished ;

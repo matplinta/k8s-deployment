@@ -2,3 +2,5 @@ tmp
 logs
 *log
 k8s/*edit.yml
+*svc_account.json
+svc_account_bucket.json

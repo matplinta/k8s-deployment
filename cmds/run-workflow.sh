@@ -22,6 +22,7 @@ REGION=europe-west4-a
 
 # SOYKB_MEM="1050Mi"
 SOYKB_MEM="4096"
+SOYKB_CPU="2"
 
 # init workflows: data container name corresponding to worker container appropriate
 declare -A WORKFLOWS=( 
@@ -67,6 +68,7 @@ echo -e "Usage: run-workflow.sh [OPTION]...
   -N\t<node_no>\t\tspecify nodes quantity
   -m\t<machine_type>\tspecify compute machine type to use (EC2 or ComputeEngine)
   -c\tto create new cluster
+  -g\tto load k8s config to kubectl
   -l\tlist all available workflows
   -k\tkill cluster in the end
   -w\twait for k8s; after completing workflow, leave k8s config
@@ -121,7 +123,9 @@ function get_k8s_credentials {
     if [ "$PROVIDER" = "gcloud" ]; then
         gcloud container clusters get-credentials $CLUSTER_NAME --zone $REGION --project $PROJECT_ID
     elif [ "$PROVIDER" = "aws" ]; then
-        aws eks --region eu-west-1 update-kubeconfig --name $CLUSTER_NAME
+        aws eks --region $REGION update-kubeconfig --name $CLUSTER_NAME
+    else 
+        log ":: Assuming local configuration"
     fi
 }
 
@@ -132,6 +136,8 @@ function create_cluster() {
         cmds/create-cluster.sh $CLUSTER_NAME $NODES $PROJECT_ID $MACHINE_TYPE
     elif [ "$PROVIDER" = "aws" ]; then
         eksctl create cluster --name $CLUSTER_NAME --region eu-west-1 --nodegroup-name node-pool --node-type "$MACHINE_TYPE" --nodes $NODES --nodes-min $NODES --nodes-max $NODES --node-volume-size 20 --ssh-access
+    else 
+        log ":: Local cluster - by default do not create."
     fi
 }
 
@@ -139,7 +145,9 @@ function delete_cluster() {
     if [ "$PROVIDER" = "gcloud" ]; then
         gcloud container clusters delete $CLUSTER_NAME --zone $REGION --project $PROJECT_ID --quiet && log ":: Cluster deleted successfully!"
     elif [ "$PROVIDER" = "aws" ]; then
-        eksctl delete cluster --region eu-west-1 --name $CLUSTER_NAME --wait && log ":: Cluster deleted successfully!"
+        eksctl delete cluster --region $REGION --name $CLUSTER_NAME --wait && log ":: Cluster deleted successfully!"
+    else 
+        log ":: Local cluster - by default do not delete."
     fi
     # aws eks delete-nodegroup --cluster-name cluster-a --nodegroup-name node-pool
     # aws eks delete-cluster --name cluster-a
@@ -192,7 +200,7 @@ while getopts "h?ckvwodgln:N:P:r:R:p:m:" opt; do
         ;;
     p)  PROVIDER=$OPTARG
         [ -z "$PROVIDER" ] && log ":: Empty provider name, exiting..." && exit 1
-        if [ "$PROVIDER" != "aws" ] && [ "$PROVIDER" != "gcloud" ]; then
+        if [ "$PROVIDER" != "aws" ] && [ "$PROVIDER" != "gcloud" ] && [ "$PROVIDER" != "local" ]; then
             log ":: Wrong provider name, exiting..." && exit 1
         fi
         ;;
@@ -239,15 +247,13 @@ log ":: Applying k8s deployments"
 if [[ "$WORKFLOW_NAME" =~ "soykb" ]]
 then
     log ":: SoyKB workflow; changing minimal container memory request of hyperflow"
-    python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml $SOYKB_MEM
+    python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_MEM_REQUEST $SOYKB_MEM
+    python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_CPU_REQUEST $SOYKB_CPU
     apply_k8s
-    python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml del
 else
-    # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_CPU_REQUEST 2
-    # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_MEM_REQUEST 4096Mi
+    # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_CPU_REQUEST 1
+    # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_MEM_REQUEST 300Mi
     apply_k8s
-    # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_CPU_REQUEST del
-    # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_MEM_REQUEST del
 fi
 
 
