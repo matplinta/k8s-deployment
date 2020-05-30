@@ -10,6 +10,7 @@ COLOR="\e[36m"
 CLUSTER_NAME=cluster-x
 CLUSTER_CREATE=0
 CLUSTER_KILL=0
+SKIP=0
 KUBERNETES_WAIT=0
 WORKFLOW_NAME=montage0.25
 PROJECT_ID=automatize-added-account-token   # hyperflow-268022 
@@ -208,6 +209,8 @@ while getopts "h?ckvwodgln:N:P:r:R:p:m:" opt; do
         ;;
     R)  REGION=$OPTARG
         ;;
+    s)  SKIP=1
+        ;;
     w)  KUBERNETES_WAIT=1
         ;;
     v)  _V=1
@@ -229,40 +232,41 @@ if [ $CLUSTER_CREATE -eq 1 ]; then
 fi
 
 get_k8s_credentials
+if [ $SKIP -eq 0 ]; then
+    log ":: List all nodes"
+    kubectl get nodes
 
-log ":: List all nodes"
-kubectl get nodes
+
+    # make working copies of ymls & configure k8s deployments
+    cp k8s/hyperflow-engine-deployment.yml k8s/hyperflow-engine-deployment-edit.yml
+    cp k8s/nfs-server.yml k8s/nfs-server-edit.yml
+    change_workflow
+
+    log ":: Showing container versions"
+    (printf "Deployment Image\n" ; grep -rP ':\s+(hyperflowwms|matplinta)' k8s | grep -P 'edit|parser' | awk '{ print $1, $3 }') | column -t
+
+    # start kubernetes
+    log ":: Applying k8s deployments"
+    if [[ "$WORKFLOW_NAME" =~ "soykb" ]]
+    then
+        log ":: SoyKB workflow; changing minimal container memory request of hyperflow"
+        python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_MEM_REQUEST $SOYKB_MEM
+        python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_CPU_REQUEST $SOYKB_CPU
+        apply_k8s
+    else
+        # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_CPU_REQUEST 1
+        # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_MEM_REQUEST 300Mi
+        apply_k8s
+    fi
 
 
-# make working copies of ymls & configure k8s deployments
-cp k8s/hyperflow-engine-deployment.yml k8s/hyperflow-engine-deployment-edit.yml
-cp k8s/nfs-server.yml k8s/nfs-server-edit.yml
-change_workflow
+    log ":: Waiting for hyperflow-engine container to start..."
+    kubectl wait --for=condition=ready --timeout=-10s --selector=name=hyperflow-engine pod  && log ":: Container hyperflow-engine is running..."
+    kubectl get pods 
 
-log ":: Showing container versions"
-(printf "Deployment Image\n" ; grep -rP ':\s+(hyperflowwms|matplinta)' k8s | grep -P 'edit|parser' | awk '{ print $1, $3 }') | column -t
-
-# start kubernetes
-log ":: Applying k8s deployments"
-if [[ "$WORKFLOW_NAME" =~ "soykb" ]]
-then
-    log ":: SoyKB workflow; changing minimal container memory request of hyperflow"
-    python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_MEM_REQUEST $SOYKB_MEM
-    python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_CPU_REQUEST $SOYKB_CPU
-    apply_k8s
-else
-    # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_CPU_REQUEST 1
-    # python3 cmds/changeVariable.py k8s/hyperflow-engine-deployment-edit.yml HF_VAR_MEM_REQUEST 300Mi
-    apply_k8s
+    log ":: Show hyperflow env variables and indicate start of running workflow:"
+    kubectl logs $(kubectl get pods --selector=name=hyperflow-engine --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') | grep -P 'HF_VAR|Running workflow'
 fi
-
-
-log ":: Waiting for hyperflow-engine container to start..."
-kubectl wait --for=condition=ready --timeout=-10s --selector=name=hyperflow-engine pod  && log ":: Container hyperflow-engine is running..."
-kubectl get pods 
-
-log ":: Show hyperflow env variables and indicate start of running workflow:"
-kubectl logs $(kubectl get pods --selector=name=hyperflow-engine --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') | grep -P 'HF_VAR|Running workflow'
 
 log ":: Waiting for workflow to finish..."
 kubectl wait --for=condition=complete --timeout=-10s --selector=name=logs-parser job && log ":: logs-parser job finished"
