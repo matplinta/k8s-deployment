@@ -111,7 +111,7 @@ function apply_k8s() {
 function kill_k8s() {
     # cluster kubernetes cleanup
     log ":: Begin cluster kubernetes cleanup"
-    kubectl delete jobs `kubectl get jobs -o custom-columns=:.metadata.name`
+    kubectl delete jobs `kubectl get jobs -o custom-columns=:.metadata.name` --timeout 10s
     kubectl delete deployment,pod,svc,cm --all -n default --timeout 10s
     kubectl delete pv,pvc --all --timeout 10s || kubectl patch pvc nfs -p '{"metadata":{"finalizers":null}}'; kubectl patch pv  nfs -p '{"metadata":{"finalizers":null}}'
     # force delete after 30s timeout of hyperflow-engine pod
