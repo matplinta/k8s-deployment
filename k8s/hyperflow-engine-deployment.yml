@@ -16,8 +16,8 @@ spec:
     spec:
       containers:
       - name: hyperflow
-        image: matplinta/hyperflow:v1.3.33
-        # image: matplinta/hyperflow
+        image: hyperflowwms/hyperflow:v1.3.36
+        # image: matplinta/hyperflow:v1.3.33
         imagePullPolicy: Always
         env:
         - name: REDIS_URL

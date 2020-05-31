@@ -11,6 +11,7 @@ CLUSTER_NAME=cluster-x
 CLUSTER_CREATE=0
 CLUSTER_KILL=0
 SKIP=0
+HFLOG_PID="-1"
 KUBERNETES_WAIT=0
 WORKFLOW_NAME=montage0.25
 PROJECT_ID=automatize-added-account-token   # hyperflow-268022 
@@ -66,6 +67,7 @@ echo -e "Usage: run-workflow.sh [OPTION]...
   -p\t<provider>\t\tspecify provider used. Defaults to gcloud
   -P\t<project_id>\tgcloud project id
   -R\t<zone/region>\t region or zone id
+  -s\tskip deploying and wait for already running workflow to finish
   -N\t<node_no>\t\tspecify nodes quantity
   -m\t<machine_type>\tspecify compute machine type to use (EC2 or ComputeEngine)
   -c\tto create new cluster
@@ -266,7 +268,9 @@ if [ $SKIP -eq 0 ]; then
 
     log ":: Show hyperflow env variables and indicate start of running workflow:"
     kubectl logs $(kubectl get pods --selector=name=hyperflow-engine --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') | grep -P 'HF_VAR|Running workflow'
-    # kubectl logs $(kubectl get pods --selector=name=hyperflow-engine --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') -f > 
+    mkdir -p logs/tmp
+    kubectl logs $(kubectl get pods --selector=name=hyperflow-engine --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') -f > logs/tmp/hfengine.log &
+    HFLOG_PID=$!
 fi
 
 log ":: Waiting for workflow to finish..."
@@ -289,7 +293,7 @@ if [ -z "$PARSED_DIR_REMOTE_NAME" ]; then
     exit 1
 fi
 
-INSTANCE_TYPE="$(gcloud container clusters describe $CLUSTER_NAME --zone $REGION --project $PROJECT_ID | grep machineType | head -n1 | awk '{ print $2 }' )"
+INSTANCE_TYPE="$(gcloud container clusters describe cluster-c2 --zone europe-west2-a --project hyperflow-268022 --format="value[](nodePools[1].config.machineType)")"
 
 mkdir -p logs/$PROVIDER/$INSTANCE_TYPE
 LOGS_DIR=logs/$PROVIDER/$INSTANCE_TYPE/$PARSED_DIR_REMOTE_NAME
@@ -302,6 +306,9 @@ for name in  logs-hf.tar.gz workflow.json; do
 done
 
 kubectl get nodes -o json > $LOGS_DIR/nodes_description.json
+
+[ "$HFLOG_PID" != "-1" ] && kill $HFLOG_PID
+[ -s logs/tmp/hfengine.log ] && mv logs/tmp/hfengine.log $LOGS_DIR
 
 files_no=$(ls -1 $LOGS_DIR | wc -l)
 
