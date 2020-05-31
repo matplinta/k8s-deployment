@@ -94,6 +94,8 @@ spec:
       #   volumeMounts:
       #      - name: workflow-data
       #        mountPath: "/work_dir:shared"
+      nodeSelector:
+        nodetype: hfmaster
       volumes:
       - name: config-map
         configMap:

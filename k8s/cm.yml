@@ -72,6 +72,8 @@ data:
                   volumeMounts:
                   - name: my-pvc-nfs
                     mountPath: ${volumePath}
+                nodeSelector:
+                  nodetype: worker
                 volumes:
                 - name: workflow-data
                   emptyDir: {}

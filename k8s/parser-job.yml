@@ -33,6 +33,8 @@ spec:
         volumeMounts:
            - name: workflow-data
              mountPath: "/work_dir:shared"
+      nodeSelector:
+        nodetype: worker 
       volumes:
       - name: workflow-data
         persistentVolumeClaim:

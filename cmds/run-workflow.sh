@@ -266,6 +266,7 @@ if [ $SKIP -eq 0 ]; then
 
     log ":: Show hyperflow env variables and indicate start of running workflow:"
     kubectl logs $(kubectl get pods --selector=name=hyperflow-engine --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') | grep -P 'HF_VAR|Running workflow'
+    # kubectl logs $(kubectl get pods --selector=name=hyperflow-engine --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') -f > 
 fi
 
 log ":: Waiting for workflow to finish..."
