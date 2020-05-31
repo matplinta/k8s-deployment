@@ -165,7 +165,7 @@ fi
 cd "$(dirname "$0")" && cd ..
 
 
-while getopts "h?ckvwodgln:N:P:r:R:p:m:" opt; do
+while getopts "h?ckvwodgsln:N:P:r:R:p:m:" opt; do
     case "$opt" in
     c)  CLUSTER_CREATE=1
         ;;
