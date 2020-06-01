@@ -18,6 +18,7 @@ PROJECT_ID=automatize-added-account-token   # hyperflow-268022
 PROVIDER=gcloud                             # aws or gcloud
 NODES=3                                     # no of nodes
 MACHINE_TYPE=e2-small
+INSTANCE_TYPE=unassigned
 REGION=europe-west4-a
 # GCLOUD: e2-highcpu-4, e2-small, 
 # AWS:    t3.medium
@@ -293,7 +294,14 @@ if [ -z "$PARSED_DIR_REMOTE_NAME" ]; then
     exit 1
 fi
 
-INSTANCE_TYPE="$(gcloud container clusters describe cluster-c2 --zone europe-west2-a --project hyperflow-268022 --format="value[](nodePools[1].config.machineType)")"
+if [ "$PROVIDER" = "gcloud" ]; then
+    INSTANCE_TYPE="$(gcloud container clusters describe $CLUSTER_NAME --zone $REGION --project $PROJECT_ID --format="value[](nodePools[1].config.machineType)")"
+elif [ "$PROVIDER" = "aws" ]; then
+    #INSTANCE_TYPE=eksctl delete cluster --region $REGION --name $CLUSTER_NAME --wait && log ":: Cluster deleted successfully!"
+    echo "TODO"
+else 
+    INSTANCE_TYPE=unassigned
+fi
 
 mkdir -p logs/$PROVIDER/$INSTANCE_TYPE
 LOGS_DIR=logs/$PROVIDER/$INSTANCE_TYPE/$PARSED_DIR_REMOTE_NAME
